@@ -1,7 +1,7 @@
 # Noise Complaint Bot & Admin Dashboard
 
 This project is a comprehensive system for reporting and analyzing urban noise complaints. It consists of a **Telegram Bot** for users to easily submit reports and a **Flask Web Dashboard** for administrators to analyze the data, view interactive maps, and get automated audio analysis.
-<img width="1512" height="872" alt="image" src="https://github.com/user-attachments/assets/ccd4811e-9bcb-4c1d-b8e7-9e41dfaca6e1" />
+<img width="1512" height="873" alt="image" src="https://github.com/user-attachments/assets/85b3802b-5e1b-433c-a806-e041f48e34bf" />
 
 ## Features
 
