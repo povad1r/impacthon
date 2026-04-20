@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Noise Report</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<div class="container mt-4 mb-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+
+            <div class="card shadow">
+                <div class="card-body p-4">
+                    <h3 class="text-center mb-4">Submit Noise Report</h3>
+                    <form method="POST" action="/" enctype="multipart/form-data">
+
+                        <div class="mb-3">
+                            <label class="form-label">Your Email</label>
+                            <input type="email" class="form-control" name="email" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Address</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="address" name="address" placeholder="Enter address or use GPS" required>
+                                <button type="button" class="btn btn-outline-primary" onclick="getLocation()">📍 GPS</button>
+                            </div>
+                            <small id="status" class="text-muted"></small>
+                        </div>
+
+                        <div class="mb-3 border p-3 rounded bg-white">
+                            <label class="form-label fw-bold">Evidence (Audio/Video Required)</label>
+
+                            <input type="file" class="form-control mb-3" id="media_input" name="media" accept="audio/*,video/*" required>
+
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" class="btn btn-outline-danger" id="recordBtn">
+                                    🎤 Record Audio Here
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" id="stopBtn" style="display: none;">
+                                    ⏹ Stop Recording
+                                </button>
+                                <span id="recordStatus" class="text-muted small"></span>
+                            </div>
+
+                            <audio id="audioPlayback" controls class="mt-3 w-100" style="display: none;"></audio>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Time of Noise</label>
+                            <input type="time" class="form-control" id="noise_time" name="time" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Reason</label>
+                            <select class="form-select" id="reason" name="reason" required onchange="document.getElementById('other_div').style.display = this.value === 'Other' ? 'block' : 'none'">
+                                <option value="Bus">Bus</option>
+                                <option value="Train">Train</option>
+                                <option value="Drunk people">Drunk people</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="mb-3" id="other_div" style="display:none;">
+                            <input type="text" class="form-control" name="custom_reason" placeholder="Please specify">
+                        </div>
+
+                        <div class="mb-4 p-3 border rounded bg-white">
+                            <label class="form-label fw-bold">Security Check</label>
+                            <p class="mb-2">{{ captcha_question }}</p>
+                            <input type="number" class="form-control" name="captcha" placeholder="Enter result" required>
+                        </div>
+
+                        <button type="submit" class="btn btn-danger w-100 py-2 fw-bold">SUBMIT REPORT</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Авто-время
+    document.getElementById('noise_time').value = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false});
+
+    // Умная геолокация с обратным геокодированием (Reverse Geocoding)
+    async function getLocation() {
+        const addrInput = document.getElementById('address');
+        const status = document.getElementById('status');
+
+        if (!navigator.geolocation) {
+            alert("Geolocation not supported");
+            return;
+        }
+
+        status.innerText = "Detecting location...";
+
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+            const { latitude, longitude } = pos.coords;
+            try {
+                // Используем бесплатный API Nominatim (OpenStreetMap) для получения адреса (добавили язык)
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=en`);
+                const data = await response.json();
+
+                if (data.address) {
+                    // Достаем части адреса
+                    const road = data.address.road || "";
+                    const houseNumber = data.address.house_number || "";
+                    const city = data.address.city || data.address.town || data.address.village || "";
+
+                    let formattedAddress = "";
+
+                    if (houseNumber && road) {
+                        formattedAddress = `${houseNumber} ${road}`;
+                    } else if (road) {
+                        formattedAddress = road;
+                    }
+
+                    if (city) {
+                        formattedAddress += formattedAddress ? `, ${city}` : city;
+                    }
+
+                    // Если удалось собрать адрес, используем его, иначе запасной вариант
+                    addrInput.value = formattedAddress || data.display_name;
+                    status.innerText = "Location detected successfully!";
+                } else {
+                    addrInput.value = `${latitude}, ${longitude}`;
+                    status.innerText = "Address not found, using coordinates.";
+                }
+            } catch (e) {
+                addrInput.value = `${latitude}, ${longitude}`;
+                status.innerText = "Error fetching address, using coordinates.";
+            }
+        }, () => {
+            status.innerText = "Access denied. Please type manually.";
+        });
+    }
+
+    // Логика записи аудио прямо в браузере
+    let mediaRecorder;
+    let audioChunks = [];
+
+    const recordBtn = document.getElementById('recordBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const recordStatus = document.getElementById('recordStatus');
+    const mediaInput = document.getElementById('media_input');
+    const audioPlayback = document.getElementById('audioPlayback');
+
+    recordBtn.addEventListener('click', async () => {
+        try {
+            // Запрашиваем доступ к микрофону
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            // Собираем кусочки аудио по мере записи
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+
+            // Что происходит, когда мы останавливаем запись
+            mediaRecorder.onstop = () => {
+                // Создаем "файл" из записанных кусочков
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+
+                // 1. Показываем аудио в плеере, чтобы юзер мог послушать
+                const audioUrl = URL.createObjectURL(audioBlob);
+                audioPlayback.src = audioUrl;
+                audioPlayback.style.display = 'block';
+
+                // 2. ИМИТИРУЕМ ЗАГРУЗКУ ФАЙЛА В ИНПУТ
+                // Создаем настоящий объект File
+                const file = new File([audioBlob], "live_recording.webm", { type: "audio/webm", lastModified: new Date().getTime() });
+                // Используем DataTransfer, чтобы положить файл в input type="file"
+                const container = new DataTransfer();
+                container.items.add(file);
+                mediaInput.files = container.files;
+
+                recordStatus.innerText = "✅ Recording saved!";
+                recordStatus.className = "text-success small fw-bold";
+
+                // Выключаем микрофон в браузере (чтобы не горела красная точка на вкладке)
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            // Запускаем запись
+            mediaRecorder.start();
+
+            // Меняем интерфейс
+            recordBtn.style.display = 'none';
+            stopBtn.style.display = 'block';
+            recordStatus.innerText = "🔴 Recording...";
+            recordStatus.className = "text-danger small fw-bold mt-2";
+
+        } catch (err) {
+            alert("Microphone access denied. Please allow microphone access or upload a file manually.");
+            console.error("Mic error:", err);
+        }
+    });
+
+    // Остановка записи по клику на Stop
+    stopBtn.addEventListener('click', () => {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+            recordBtn.style.display = 'block';
+            stopBtn.style.display = 'none';
+        }
+    });
+</script>
+</body>
+</html>

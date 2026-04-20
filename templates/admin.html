@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body class="bg-light">
+<div class="container-fluid px-4 mt-4">
+    <h2 class="mb-4">Admin Dashboard</h2>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white fw-bold text-primary">📊 Most Frequent Reasons</div>
+                <ul class="list-group list-group-flush">
+                    {% for reason, count in top_reasons %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            {{ reason }}
+                            <span class="badge bg-primary rounded-pill">{{ count }} reports</span>
+                        </li>
+                    {% else %}
+                        <li class="list-group-item text-muted">Not enough data</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white fw-bold text-danger">🕒 Peak Noise Hours</div>
+                <ul class="list-group list-group-flush">
+                    {% for time, count in top_times %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Around {{ time }}
+                            <span class="badge bg-danger rounded-pill">{{ count }} reports</span>
+                        </li>
+                    {% else %}
+                        <li class="list-group-item text-muted">Not enough data</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% if map_markers %}
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white fw-bold text-dark">🗺️ Complaint Map (last 24h)</div>
+        <div class="card-body p-0">
+            <div id="map" style="height: 400px; width: 100%; border-radius: 0 0 8px 8px;"></div>
+        </div>
+    </div>
+    {% endif %}
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>User (Click to filter)</th>
+                        <th>Address (Click to filter)</th>
+                        <th>Time</th>
+                        <th>Reason</th>
+                        <th>Media</th>
+                        <th>Noise Analysis</th>
+                        <th>Date Submitted</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in complaints %}
+                    <tr class="{% if c.address in red_flags %}table-danger{% endif %} align-middle">
+                        <td>{{ c.id }}</td>
+
+                        <td>
+                            <a href="{{ url_for('admin_by_email', email=c.email) }}" class="text-decoration-none fw-bold">{{ c.email }}</a>
+                        </td>
+
+                        <td>
+                            <a href="{{ url_for('admin_by_address', address=c.address) }}"
+                               class="text-decoration-none text-dark"
+                               title="{{ c.address }}">
+                                📍 {{ c.address.split(',')[:3] | join(',') }}
+                            </a>
+
+                            {% if c.address in red_flags %}
+                                <span class="badge bg-danger ms-2">>10 (24h)</span>
+                            {% endif %}
+                        </td>
+
+                        <td>{{ c.time }}</td>
+                        <td>
+                            {% if c.reason == 'Other' and c.custom_reason %}
+                                Other: {{ c.custom_reason }}
+                            {% else %}
+                                {{ c.reason }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if c.media_file %}
+                                <a href="{{ url_for('static', filename='uploads/' + c.media_file) }}" class="btn btn-sm btn-primary" target="_blank">View</a>
+                            {% else %}
+                                <span class="text-muted small">No file</span>
+                            {% endif %}
+                        </td>
+                        <td style="min-width: 200px;">
+                            {% if c.noise_profile %}
+                                {% set rec = c.noise_profile | noise_rec %}
+                                {% if c.noise_profile == 'Brown Noise (Rumble/Bass)' %}
+                                    {% set badge_bg = '#FAEEDA' %} {% set badge_color = '#412402' %} {% set badge_border = '#EF9F27' %}
+                                {% elif c.noise_profile == 'Pink Noise (Balanced/Wind)' %}
+                                    {% set badge_bg = '#E1F5EE' %} {% set badge_color = '#085041' %} {% set badge_border = '#5DCAA5' %}
+                                {% else %}
+                                    {% set badge_bg = '#EEEDFE' %} {% set badge_color = '#3C3489' %} {% set badge_border = '#AFA9EC' %}
+                                {% endif %}
+
+                                <span class="badge rounded-pill mb-1"
+                                      style="background:{{ badge_bg }}; color:{{ badge_color }}; border:1px solid {{ badge_border }}; font-weight:500;">
+                                    {{ c.noise_profile }}
+                                </span>
+
+                                <div class="text-muted small">
+                                    {{ rec.emoji }} Mask with: <strong>{{ rec.mask_with }}</strong>
+                                </div>
+
+                                {% if rec.plants %}
+                                <div class="small mt-1">
+                                    🌿 Plants:
+                                    {% for plant in rec.plants %}
+                                        <span class="badge"
+                                              style="background:#EAF3DE; color:#173404; border:1px solid #97C459; font-size:11px;">
+                                            {{ plant }}
+                                        </span>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+
+                                {% if rec.iot %}
+                                <div class="small mt-1">
+                                    📡 IoT: <span class="badge"
+                                                  style="background:#E6F1FB; color:#042C53; border:1px solid #85B7EB; font-size:11px;">
+                                        {{ rec.iot }}
+                                    </span>
+                                </div>
+                                {% endif %}
+
+                                {% if c.avg_frequency %}
+                                <div class="text-muted mt-1" style="font-size:11px;">
+                                    {{ c.avg_frequency }} Hz · {{ c.avg_volume_db }} dB
+                                </div>
+                                {% endif %}
+
+                            {% else %}
+                                <span class="text-muted small">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-muted small">{{ c.created_at | to_local }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center py-4">No complaints recorded yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% if map_markers %}
+<script>
+    const markers = {{ map_markers | tojson }};
+    const map = L.map('map').setView([markers[0].lat, markers[0].lon], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    markers.forEach(function(m) {
+        const color = m.is_red ? '#dc3545' : '#0d6efd';
+        const size = Math.min(20 + m.count * 4, 60);
+        const icon = L.divIcon({
+            className: '',
+            html: `<div style="
+                background:${color}; color:white; border-radius:50%;
+                width:${size}px; height:${size}px;
+                display:flex; align-items:center; justify-content:center;
+                font-weight:bold; font-size:${size > 35 ? '13' : '11'}px;
+                border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);
+            ">${m.count}</div>`,
+            iconSize: [size, size],
+            iconAnchor: [size/2, size/2]
+        });
+        L.marker([m.lat, m.lon], {icon: icon})
+            .addTo(map)
+            .bindPopup(`<strong>${m.address}</strong><br>
+                <span style="color:${color}; font-weight:bold;">
+                    ${m.count} complaint${m.count > 1 ? 's' : ''} in last 24h
+                </span>
+                ${m.is_red ? '<br>🚨 High volume!' : ''}`);
+    });
+
+    if (markers.length > 1) {
+        map.fitBounds(L.latLngBounds(markers.map(m => [m.lat, m.lon])), {padding: [40, 40]});
+    }
+</script>
+{% endif %}
+
+</body>
+</html>
+
